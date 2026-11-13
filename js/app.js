@@ -89,7 +89,7 @@ let renderTimer = null;
 function settingsChanged(key) {
   syncDisabled();
   cache.sweep = null;
-  if (key === 'extremeFactor' || key === 'all') renderQuality();
+  if (key === 'extremeFactor' || key === 'excludeExtreme' || key === 'all') renderQuality();
   clearTimeout(renderTimer);
   renderTimer = setTimeout(() => renderStep(), 180);
 }

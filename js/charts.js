@@ -104,7 +104,10 @@ export function zoomPanPlugin({ factor = 0.8 } = {}) {
           u.setScale('x', { min: nMin, max: nMax });
         }, { passive: false });
 
-        over.addEventListener('mousedown', (e) => {
+        // Captured on the root (an ancestor of `over`) so it runs before uPlot's own
+        // mousedown on `over`; stopPropagation then keeps uPlot's box zoom from starting.
+        u.root.addEventListener('mousedown', (e) => {
+          if (!over.contains(e.target)) return;
           if (!(e.shiftKey || e.button === 1)) return;
           e.preventDefault();
           e.stopPropagation();

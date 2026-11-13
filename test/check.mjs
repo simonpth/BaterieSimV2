@@ -1,6 +1,6 @@
 // Usage: node test/check.mjs AnalyseJahr2026.csv
 import { readFileSync } from 'node:fs';
-import Core from '../js/core.js';
+import * as Core from '../js/core.js';
 const { parseText, buildDataset, simulate, annualFigures, sweep, crossing } = Core;
 
 const file = process.argv[2] || 'AnalyseJahr2026.csv';
