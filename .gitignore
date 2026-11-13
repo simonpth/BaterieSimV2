@@ -1,1 +1,3 @@
-AnalyseJahr2026.csv
+# Messdaten bleiben lokal und werden nicht veröffentlicht
+*.csv
+.DS_Store

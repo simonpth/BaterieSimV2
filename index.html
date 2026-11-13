@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speicher-Auslegung</title>
+  <meta name="description" content="Auslegung eines stationären LiFePO4-Hausspeichers aus KSEM-Messdaten (PV-Einspeisung und Netzbezug).">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='6' width='16' height='12' rx='2' fill='none' stroke='%232a78d6' stroke-width='2'/%3E%3Crect x='19' y='10' width='2' height='4' fill='%232a78d6'/%3E%3Crect x='5' y='8' width='8' height='8' fill='%232a78d6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/uPlot.min.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-title">Speicher-Auslegung</div>
+      <div class="brand-sub">aus KSEM-Messdaten</div>
+    </div>
+
+    <nav class="steps" aria-label="Schritte">
+      <button class="step" data-step="upload"><span class="num">1</span><span>Upload</span></button>
+      <button class="step" data-step="raw" disabled><span class="num">2</span><span>Rohdaten</span></button>
+      <button class="step" data-step="sim" disabled><span class="num">3</span><span>Simulation</span></button>
+      <button class="step" data-step="plot" disabled><span class="num">4</span><span>Auswertung</span></button>
+    </nav>
+
+    <div class="settings">
+      <details open>
+        <summary>Hochrechnung</summary>
+        <label class="field">
+          <span>Darstellung <i class="q" data-tip="Nur Messzeitraum: Es zählen nur die gemessenen Tage, alle fehlenden Tage des Jahres gelten als 0. Das ist die konservative Untergrenze.&#10;Hochgerechnet: Fehlende Tage werden mit einem Tagesmittel aufgefüllt (Methode unten).&#10;Beides: Beide Kurven werden gezeigt und die Fläche dazwischen schattiert.">?</i></span>
+          <select data-key="mode">
+            <option value="both">Beides</option>
+            <option value="year">Hochgerechnet auf 365 Tage</option>
+            <option value="measured">Nur Messzeitraum (Rest = 0)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Methode <i class="q" data-tip="So werden die fehlenden Tage bis 365 aufgefüllt:&#10;• Letzte N Tage: Mittelwert der letzten N gemessenen Tage. Wenn die Messung im Herbst endet, ist das für Dezember/Januar eher optimistisch.&#10;• Erste + letzte N Tage: Mittelwert aus Anfang und Ende der Messung.&#10;• Keine: Fehlende Tage zählen 0. Das entspricht dem Messzeitraum.">?</i></span>
+          <select data-key="method">
+            <option value="last">Letzte N Tage</option>
+            <option value="firstlast">Erste + letzte N Tage</option>
+            <option value="none">Keine</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>N (Tage) <i class="q" data-tip="Anzahl der Messtage, aus denen der Tagesmittelwert für die Hochrechnung gebildet wird.">?</i></span>
+          <input type="number" data-key="N" min="1" max="120" step="1">
+        </label>
+        <label class="field check">
+          <input type="checkbox" data-key="excludeExtreme">
+          <span>Extremtage ausschließen <i class="q" data-tip="Tage mit ungewöhnlich hohem Netzbezug (z. B. Baustelle, Heizstab, Ladevorgänge) werden aus der Rechnung genommen. Sie zählen dann als nicht gemessen und werden von der Hochrechnung mit abgedeckt.">?</i></span>
+        </label>
+        <label class="field">
+          <span>Extremtag ab × Median <i class="q" data-tip="Ein Tag gilt als Extremtag, wenn sein Netzbezug größer ist als dieser Faktor mal dem Median des täglichen Netzbezugs.">?</i></span>
+          <input type="number" data-key="extremeFactor" min="1.5" max="50" step="0.5">
+        </label>
+      </details>
+
+      <details open>
+        <summary>Akku</summary>
+        <label class="field">
+          <span>η Laden [%] <i class="q" data-tip="Wirkungsgrad beim Laden: Anteil der PV-Überschussenergie, der in der Zelle ankommt (Wechselrichter + Zelle).">?</i></span>
+          <input type="number" data-key="etaC" min="50" max="100" step="0.5">
+        </label>
+        <label class="field">
+          <span>η Entladen [%] <i class="q" data-tip="Wirkungsgrad beim Entladen: Anteil der Zellenergie, der als Wechselstrom im Haus ankommt.">?</i></span>
+          <input type="number" data-key="etaD" min="50" max="100" step="0.5">
+        </label>
+        <label class="field">
+          <span>Max. Leistung [kW] <i class="q" data-tip="Maximale Lade- und Entladeleistung des Speichers (Wechselstromseite). 0 = keine Begrenzung. Bei typischer Nachtlast ändert eine Grenze von 5 kW das Ergebnis meist um weniger als 1 %.">?</i></span>
+          <input type="number" data-key="pMax" min="0" max="100" step="0.5">
+        </label>
+        <label class="field">
+          <span>SoC zu Beginn [%] <i class="q" data-tip="Ladezustand des Speichers zu Beginn des Messzeitraums.">?</i></span>
+          <input type="number" data-key="soc0" min="0" max="100" step="5">
+        </label>
+        <label class="field">
+          <span>Zyklenfestigkeit <i class="q" data-tip="Garantierte Anzahl Vollzyklen laut Datenblatt. Bei LiFePO4 bezieht sich der Wert meist auf eine Restkapazität von 70–80 %, nicht auf den Ausfall.">?</i></span>
+          <input type="number" data-key="cycleLife" min="500" max="20000" step="100">
+        </label>
+        <label class="field">
+          <span>Kalenderlebensdauer [a] <i class="q" data-tip="Angenommene chemische Lebensdauer unabhängig von der Nutzung. Zusammen mit der Zyklenfestigkeit ergibt sich die Grenzlinie: Zyklenfestigkeit ÷ Kalenderlebensdauer = Zyklen pro Jahr, ab denen der Akku durch Zyklen statt durch Alterung verschleißt.">?</i></span>
+          <input type="number" data-key="calLife" min="1" max="50" step="1">
+        </label>
+      </details>
+
+      <details open>
+        <summary>Kosten</summary>
+        <label class="field">
+          <span>Strompreis [ct/kWh] <i class="q" data-tip="Arbeitspreis für Netzbezug. Jede vermiedene kWh Netzbezug spart diesen Betrag.">?</i></span>
+          <input type="number" data-key="price" min="0" max="200" step="0.5">
+        </label>
+        <label class="field">
+          <span>Einspeisevergütung [ct/kWh] <i class="q" data-tip="Vergütung für eingespeisten Strom. Was in den Speicher geladen wird, wird nicht mehr eingespeist. Diese entgangene Vergütung wird von der Ersparnis abgezogen.">?</i></span>
+          <input type="number" data-key="feedIn" min="0" max="100" step="0.1">
+        </label>
+        <label class="field">
+          <span>Preissteigerung [%/a] <i class="q" data-tip="Jährliche Steigerung des Strompreises für die Amortisationsrechnung. Die Einspeisevergütung bleibt konstant.">?</i></span>
+          <input type="number" data-key="priceInc" min="-10" max="20" step="0.5">
+        </label>
+        <label class="field">
+          <span>Preis je kWh [€] <i class="q" data-tip="Kosten pro kWh nutzbarer Speicherkapazität (Batteriemodule).">?</i></span>
+          <input type="number" data-key="costPerKWh" min="0" max="5000" step="10">
+        </label>
+        <label class="field">
+          <span>Fixkosten [€] <i class="q" data-tip="Kosten, die nicht von der Kapazität abhängen: Batteriewechselrichter / BMS, Installation, Elektrik.">?</i></span>
+          <input type="number" data-key="costFixed" min="0" max="50000" step="100">
+        </label>
+      </details>
+      <button class="link-btn" id="resetSettings" type="button">Einstellungen zurücksetzen</button>
+    </div>
+    <div class="sidebar-foot">Alle Daten bleiben im Browser.</div>
+  </aside>
+
+  <main class="main">
+    <!-- 1 Upload -->
+    <section class="view" data-view="upload">
+      <header class="view-head">
+        <h1>1 · Messdaten laden</h1>
+        <p class="lead">KSEM-Export als CSV mit den Spalten <code>DateTime; Einspeisung [W]; Netzbezug [W]; Direktverbrauch [W]; Hausverbrauch [W]</code>. Mehrere Dateien und aneinandergehängte Wochenexporte werden zusammengeführt, Duplikate entfernt.</p>
+      </header>
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".csv,text/csv,text/plain" multiple hidden>
+        <div class="dz-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        </div>
+        <div class="dz-text"><strong>Dateien hierher ziehen</strong> oder klicken zum Auswählen</div>
+        <div class="dz-sub">Die Verarbeitung erfolgt lokal im Browser – es wird nichts hochgeladen.</div>
+      </label>
+      <div id="fileList" class="file-list"></div>
+      <div id="quality"></div>
+      <div class="view-nav"><span></span><button class="btn primary" data-goto="raw" disabled>Weiter zu Rohdaten →</button></div>
+    </section>
+
+    <!-- 2 Raw -->
+    <section class="view" data-view="raw" hidden>
+      <header class="view-head">
+        <h1>2 · Rohdaten</h1>
+        <p class="lead">10-Minuten-Mittelwerte. <span class="hint">Mausrad: zoomen · Shift + Mausrad oder horizontal wischen: verschieben · Ziehen: Bereich wählen · Shift + Ziehen: verschieben · Doppelklick: zurücksetzen</span></p>
+      </header>
+      <div class="card">
+        <div class="card-head">
+          <h2>Leistung <i class="q" data-tip="Gemessene Leistung in kW. Einspeisung ist der PV-Überschuss, Netzbezug das Defizit. Nur diese beiden Größen fließen in die Simulation ein. Legende anklicken zum Ein- und Ausblenden.">?</i></h2>
+          <div class="range-btns" data-for="rawPower"></div>
+        </div>
+        <div class="chart" id="rawPower" data-h="360"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Tagesenergie <i class="q" data-tip="Energie pro Tag in kWh. Daran sieht man schnell Extremtage, fehlende Tage und den saisonalen Verlauf.">?</i></h2>
+        </div>
+        <div class="chart" id="rawDaily" data-h="280"></div>
+      </div>
+      <div class="view-nav"><button class="btn" data-goto="upload">← Upload</button><button class="btn primary" data-goto="sim">Weiter zur Simulation →</button></div>
+    </section>
+
+    <!-- 3 Simulation -->
+    <section class="view" data-view="sim" hidden>
+      <header class="view-head">
+        <h1>3 · Simulation</h1>
+        <p class="lead">Ladezustand eines Speichers über den Messzeitraum: tagsüber wird PV-Überschuss geladen, bei Netzbezug wird entladen.</p>
+      </header>
+      <div class="card cap-card">
+        <label class="cap-label" for="capRange">Nutzbare Kapazität <i class="q" data-tip="Nutzbare Kapazität des Speichers (nicht die Brutto-Nennkapazität). Viele Hersteller geben 90–95 % der Bruttokapazität als nutzbar an.">?</i></label>
+        <input type="range" id="capRange" min="0.5" max="40" step="0.5">
+        <div class="cap-num"><input type="number" id="capNum" min="0.5" max="200" step="0.5"><span>kWh</span></div>
+      </div>
+      <div id="simKpis" class="kpi-grid"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Ladezustand <i class="q" data-tip="Ladezustand (SoC) in % der nutzbaren Kapazität. Lücken = ausgeschlossene Extremtage. Zoom und Verschieben sind mit dem Leistungsdiagramm darunter gekoppelt.">?</i></h2>
+          <div class="range-btns" data-for="simSoc"></div>
+        </div>
+        <div class="chart" id="simSoc" data-h="220"></div>
+        <div class="chart" id="simPower" data-h="200"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Vollzyklen pro Monat <i class="q" data-tip="Vollzyklen = entnommene Energie (Zellseite) ÷ nutzbare Kapazität. Bei der Hochrechnung werden fehlende Tage eines Monats mit dem Tagesmittel der Hochrechnung ergänzt.">?</i></h2>
+        </div>
+        <div class="chart" id="simMonthly" data-h="260"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Wirtschaftlichkeit <i class="q" data-tip="Ersparnis = vermiedener Netzbezug × Strompreis − geladene PV-Energie × Einspeisevergütung. Amortisation mit jährlicher Strompreissteigerung. Kosten und Preise in der linken Leiste unter „Kosten“.">?</i></h2></div>
+        <div id="simEcon" class="kpi-grid inner"></div>
+      </div>
+      <div class="view-nav"><button class="btn" data-goto="raw">← Rohdaten</button><button class="btn primary" data-goto="plot">Weiter zur Auswertung →</button></div>
+    </section>
+
+    <!-- 4 Plotter -->
+    <section class="view" data-view="plot" hidden>
+      <header class="view-head">
+        <h1>4 · Auswertung über der Kapazität</h1>
+        <p class="lead">Jede Kapazität wird über den gesamten Messzeitraum simuliert. Kapazität = <strong>nutzbare</strong> Kapazität.</p>
+      </header>
+      <div class="card range-card">
+        <label class="field inline"><span>Kapazität von [kWh] <i class="q" data-tip="Kleinste simulierte nutzbare Kapazität.">?</i></span><input type="number" data-key="capMin" min="0.5" max="200" step="0.5"></label>
+        <label class="field inline"><span>bis [kWh] <i class="q" data-tip="Größte simulierte nutzbare Kapazität.">?</i></span><input type="number" data-key="capMax" min="1" max="200" step="1"></label>
+        <label class="field inline"><span>Schrittweite [kWh] <i class="q" data-tip="Abstand zwischen den simulierten Kapazitäten. Bei sehr kleiner Schrittweite steigt die Rechenzeit.">?</i></span><input type="number" data-key="capStep" min="0.1" max="10" step="0.1"></label>
+        <button class="btn" id="exportCsv" type="button">Tabelle als CSV</button>
+      </div>
+      <div id="plotKpis" class="kpi-grid"></div>
+      <div class="card">
+        <div class="card-head"><h2>Vollzyklen pro Jahr <i class="q" data-tip="Vollzyklen pro Jahr über der nutzbaren Kapazität. Die gestrichelte Linie ist die Grenze Zyklenfestigkeit ÷ Kalenderlebensdauer. Oberhalb verschleißt der Akku durch Zyklen schneller, als er chemisch altert. Unterhalb begrenzt die Kalenderlebensdauer. Die Schnittpunkte sind markiert.">?</i></h2></div>
+        <div class="chart" id="pCycles" data-h="340"></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h2>Vermiedener Netzbezug pro Jahr <i class="q" data-tip="Netzbezug, der durch den Speicher gedeckt wird (Wechselstromseite, nach Entladeverlusten). Der Deckungsgrad bezogen auf den gesamten Netzbezug steht in der Tabelle.">?</i></h2></div>
+          <div class="chart" id="pAvoided" data-h="280"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Grenznutzen <i class="q" data-tip="Zusätzlich vermiedener Netzbezug pro Jahr für jede zusätzliche kWh Kapazität. Fällt die Kurve stark ab, bringt weitere Kapazität kaum noch etwas.">?</i></h2></div>
+          <div class="chart" id="pMarginal" data-h="280"></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h2>Amortisation und Lebensdauer <i class="q" data-tip="Amortisationszeit = Jahre, bis die kumulierte Ersparnis die Investition (Fixkosten + Preis je kWh × Kapazität) deckt. Die gestrichelte Lebensdauer ist min(Zyklenfestigkeit ÷ Zyklen pro Jahr, Kalenderlebensdauer). Wirtschaftlich ist ein Speicher nur, wenn die Amortisation unter der Lebensdauer liegt.">?</i></h2></div>
+          <div class="chart" id="pPayback" data-h="300"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Gewinn über die Lebensdauer <i class="q" data-tip="Kumulierte Ersparnis über die Lebensdauer minus Investition. Das Maximum der Kurve ist die wirtschaftlich günstigste Kapazität für die gewählten Preise.">?</i></h2></div>
+          <div class="chart" id="pGain" data-h="300"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Ergebnistabelle</h2></div>
+        <div class="table-wrap"><table id="resultTable" class="data-table"></table></div>
+      </div>
+      <p class="note"><strong>Hinweis:</strong> Die Zyklenfestigkeit (z. B. 6000 Zyklen) bezieht sich meist auf das Erreichen von 70–80 % Restkapazität, nicht auf den Ausfall. Der Akku ist danach weiter nutzbar, nur mit weniger Kapazität. Die Kalenderlebensdauer von 30 Jahren ist eine Annahme. Die Hochrechnung mit Herbstwerten ist für Dezember/Januar eher optimistisch. Die Kurve „Nur Messzeitraum“ ist die Untergrenze.</p>
+      <div class="view-nav"><button class="btn" data-goto="sim">← Simulation</button><span></span></div>
+    </section>
+  </main>
+</div>
+<div id="tip" role="tooltip" hidden></div>
+
+<script src="vendor/uPlot.iife.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
