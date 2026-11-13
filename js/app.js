@@ -7,7 +7,7 @@ const { fmt } = P;
 const DEFAULTS = {
   mode: 'both', method: 'last', N: 12, excludeExtreme: false, extremeFactor: 5,
   etaC: 95, etaD: 95, pMax: 0, soc0: 0, cycleLife: 6000, calLife: 30,
-  price: 35, feedIn: 8, priceInc: 2, costPerKWh: 400, costFixed: 1500,
+  price: 35, feedIn: 8, priceInc: 2, costPerKWh: 280, costFixed: 700,
   capMin: 1, capMax: 30, capStep: 0.5, cap: 10,
 };
 const LS_SET = 'speicher.settings.v1';
@@ -19,6 +19,8 @@ const store = {
 };
 
 let S = { ...DEFAULTS, ...(store.get(LS_SET) || {}) };
+// Alte Standard-Kosten (400 €/kWh, 1500 € fix) aus gespeicherten Einstellungen auf die neuen Werte heben.
+if (S.costPerKWh === 400 && S.costFixed === 1500) { S.costPerKWh = DEFAULTS.costPerKWh; S.costFixed = DEFAULTS.costFixed; }
 let files = []; // { name, size, text, parsed }
 let ds = null;
 let step = 'upload';
