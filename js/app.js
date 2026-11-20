@@ -9,6 +9,7 @@ const DEFAULTS = {
   etaC: 95, etaD: 95, pMax: 0, soc0: 0, cycleLife: 6000, calLife: 30,
   price: 35, feedIn: 8, priceInc: 2, costPerKWh: 280, costFixed: 700,
   capMin: 1, capMax: 30, capStep: 0.5, cap: 10,
+  winch: false, winchCap: 120, winchKWh: 30, winchStart: 9, winchEnd: 19, winchFrom: 3, winchTo: 10,
 };
 const LS_SET = 'speicher.settings.v1';
 const LS_FILES = 'speicher.files.v1';
@@ -21,6 +22,9 @@ const store = {
 let S = { ...DEFAULTS, ...(store.get(LS_SET) || {}) };
 // Alte Standard-Kosten (400 €/kWh, 1500 € fix) aus gespeicherten Einstellungen auf die neuen Werte heben.
 if (S.costPerKWh === 400 && S.costFixed === 1500) { S.costPerKWh = DEFAULTS.costPerKWh; S.costFixed = DEFAULTS.costFixed; }
+// Früherer Windenstart-Standard April → März; entfallene Einstellung entfernen.
+if (S.winchFrom === 4 && 'winchChargeFrom' in S) S.winchFrom = DEFAULTS.winchFrom;
+delete S.winchChargeFrom;
 let files = []; // { name, size, text, parsed }
 let ds = null;
 let step = 'upload';
@@ -44,6 +48,7 @@ function params() {
     capMin: S.capMin, capMax: Math.max(S.capMax, S.capMin), capStep: Math.max(S.capStep, (S.capMax - S.capMin) / 1000, 0.1),
     price: S.price / 100, feedIn: S.feedIn / 100, rate: S.priceInc / 100,
     costPerKWh: S.costPerKWh, costFixed: S.costFixed,
+    winch: S.winch ? { kWh: +S.winchKWh || 0, capKWh: +S.winchCap || 0, startHour: +S.winchStart, endHour: +S.winchEnd, fromMonth: +S.winchFrom, toMonth: +S.winchTo } : null,
   };
 }
 
@@ -61,7 +66,7 @@ function bindSettings() {
         if (!Number.isFinite(v)) return;
         if (el.min !== '' && v < +el.min) return;
         if (el.max !== '' && v > +el.max) return;
-      } else v = el.value;
+      } else v = el.dataset.num !== undefined ? +el.value : el.value;
       S[key] = v;
       saveSettings();
       settingsChanged(key);
@@ -83,6 +88,7 @@ function syncDisabled() {
   const off = S.mode === 'measured';
   document.querySelectorAll('[data-key=method],[data-key=N]').forEach((el) => { el.disabled = off; });
   document.querySelector('[data-key=N]').disabled = off || S.method === 'none';
+  document.querySelectorAll('[data-key=winchCap],[data-key=winchKWh],[data-key=winchStart],[data-key=winchEnd],[data-key=winchFrom],[data-key=winchTo]').forEach((el) => { el.disabled = !S.winch; });
 }
 
 function saveSettings() { store.set(LS_SET, S); }
@@ -383,6 +389,9 @@ function renderSim() {
       ms.map((k) => ({ k, v: fmt(fig[k].charged), u: 'kWh/a' }))),
     kpi('Speicher voll / leer', 'An wie vielen Messtagen der Speicher mindestens einmal ganz voll bzw. ganz leer war. Ist er fast jeden Tag voll und leer, wird die Kapazität vollständig genutzt.',
       [{ k: 'measured', v: `${res.daysFull} / ${res.daysEmpty}` }], `von ${act.length} Messtagen`),
+    ...(p.winch ? [kpi('Elektrowinde aus PV', `PV-Überschuss, mit dem der Windenakku (${fmt(S.winchCap)} kWh) nachgeladen wird. Die Winde läuft samstags und sonntags von ${P.deNames.MMM[S.winchFrom - 1]} bis ${P.deNames.MMM[S.winchTo - 1]} zwischen ${fmt(S.winchStart)} und ${fmt(S.winchEnd)} Uhr und verbraucht dabei ${fmt(S.winchKWh)} kWh. In dieser Zeit kann sie nicht geladen werden. Sonst wird der Windenakku nur aus PV geladen, immer vor dem Hausspeicher. Ist er am Freitag vor einem Windenwochenende nicht voll, wird er aus dem Netz vollgeladen.`,
+      ms.map((k) => ({ k, v: fmt(fig[k].winchPV), u: 'kWh/a' })),
+      `Freitags aus dem Netz ${ms.map((k) => fmt(fig[k].winchGrid)).join(' / ')} kWh/a (${res.winchTopUps}× im Messzeitraum) · ${res.winchDays} Windentage gemessen · Windenakku min. ${fmt(res.winchMin)} kWh`)] : []),
   ].join('');
 
   const pbCls = (k) => (ec[k].pb <= ec[k].life ? 'status-ok' : 'status-bad');
@@ -405,10 +414,12 @@ function renderSim() {
   const powEl = document.getElementById('simPower');
   const keep = prevX(socEl);
   const soc = res.soc;
+  const wser = res.winch;
   const data = gapped(ds.ts, [
     (i) => (Number.isNaN(soc[i]) ? null : soc[i]),
     (i) => ds.feed[i] / 1000,
     (i) => -ds.grid[i] / 1000,
+    (i) => (Number.isNaN(wser[i]) ? null : wser[i] / 1000),
   ], ds.dt);
   const group = P.linkGroup();
   const sync = { key: 'sim', setSeries: false };
@@ -432,8 +443,9 @@ function renderSim() {
       { label: 'Zeit', value: '{DD}.{MM}.{YYYY} {HH}:{mm}' },
       { label: 'Einspeisung (laden)', stroke: t.s1, width: 1, fill: P.alpha(t.s1, 0.12), value: unitVal('kW', 2) },
       { label: 'Netzbezug (entladen, negativ)', stroke: t.s2, width: 1, fill: P.alpha(t.s2, 0.12), value: unitVal('kW', 2) },
+      ...(p.winch ? [{ label: 'Winde laden (aus PV)', stroke: t.s4, width: 1, fill: P.alpha(t.s4, 0.25), value: unitVal('kW', 2) }] : []),
     ],
-  }, [data[0], data[2], data[3]]);
+  }, p.winch ? [data[0], data[2], data[3], data[4]] : [data[0], data[2], data[3]]);
   group.push(u1, u2);
   if (keep) u1.setScale('x', keep);
   rangeButtons(document.querySelector('[data-for=simSoc]'), [u1]);

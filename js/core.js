@@ -189,8 +189,32 @@ export function findExtremeDays(ds, factor) {
 }
 
 /**
+ * Daily energy use (kWh) of the electric winch per measured day.
+ * winch: { kWh, capKWh, fromMonth, toMonth, startHour, endHour } (months 1..12, range may wrap) or null.
+ * Use on every Saturday and Sunday within the month range.
+ */
+export function winchDemand(ds, winch) {
+  const out = new Float64Array(ds.days.length);
+  if (!winch || !(winch.kWh > 0)) return out;
+  const a = winch.fromMonth, b = winch.toMonth;
+  ds.days.forEach((d, i) => {
+    const y = +d.slice(0, 4), m = +d.slice(5, 7), dd = +d.slice(8, 10);
+    const inSeason = a <= b ? m >= a && m <= b : m >= a || m <= b;
+    const wd = new Date(Date.UTC(y, m - 1, dd)).getUTCDay();
+    if (inSeason && (wd === 0 || wd === 6)) out[i] = winch.kWh;
+  });
+  return out;
+}
+
+/**
  * Simulate one usable capacity capKWh.
- * p: { etaC, etaD, pMaxKW (0 = unlimited), soc0 (0..1), exclude: Set of day indices }
+ * p: { etaC, etaD, pMaxKW (0 = unlimited), soc0 (0..1), exclude: Set of day indices,
+ *      winch: { kWh, capKWh, fromMonth, toMonth, startHour, endHour } | null }
+ * The winch has its own battery (capKWh, starts full). PV surplus refills it first; only the remaining
+ * surplus charges the house battery. On winch days the winch is in use from startHour to endHour:
+ * it cannot be charged then, and at endHour its battery holds `kWh` less than at startHour.
+ * If the winch battery is not full at the end of Friday before a winch Saturday, it is topped up
+ * from the grid (not from the house battery).
  * Returns totals (kWh), per-day arrays and optionally the SoC series.
  */
 export function simulate(ds, capKWh, p, withSeries = false) {
@@ -203,15 +227,42 @@ export function simulate(ds, capKWh, p, withSeries = false) {
   const dayAvoid = new Float64Array(nd); // AC-side avoided grid Wh
   const dayCharge = new Float64Array(nd); // AC-side feed used for charging Wh
   const series = withSeries ? new Float32Array(ds.n) : null;
+  const winchSeries = withSeries ? new Float32Array(ds.n) : null; // winch charging power W
   const ex = p.exclude;
+  const wNeed = winchDemand(ds, p.winch); // kWh per day
+  const dayWinchPV = new Float64Array(nd); // Wh
+  const wCap = p.winch ? Math.max(0, p.winch.capKWh) * 1000 : 0;
+  const wStart = p.winch?.startHour ?? 9, wEnd = p.winch?.endHour ?? 19;
+  const dayWinchGrid = new Float64Array(nd); // Wh, Friday-night top-up from grid
+  const isSat = ds.days.map((s) => new Date(s + 'T00:00:00Z').getUTCDay() === 6);
+  let wSoc = wCap, wMin = wCap, lastDay = -1, used = false;
   let soc = C * (p.soc0 || 0);
   let full = 0, empty = 0;
   const dayFull = new Uint8Array(nd), dayEmpty = new Uint8Array(nd);
   for (let i = 0; i < ds.n; i++) {
     const d = ds.dayIdx[i];
-    if (ex && ex.has(d)) { if (series) series[i] = NaN; continue; }
-    // charge from surplus
-    const surplus = Math.min(ds.feed[i] * h, pLim);
+    if (ex && ex.has(d)) { if (series) { series[i] = NaN; winchSeries[i] = NaN; } continue; }
+    if (d !== lastDay) {
+      lastDay = d; used = false;
+      // end of Friday before a winch Saturday: fill the winch battery from the grid
+      if (wNeed[d] > 0 && isSat[d] && wSoc < wCap) { dayWinchGrid[d] += wCap - wSoc; wSoc = wCap; }
+    }
+    const hour = Math.floor((ds.ts[i] % 86400) / 3600);
+    const winchBusy = wNeed[d] > 0 && hour >= wStart && hour < wEnd;
+    if (winchBusy && !used) { // winch day: energy used between start and end hour
+      used = true;
+      wSoc = Math.max(0, wSoc - wNeed[d] * 1000);
+      if (wSoc < wMin) wMin = wSoc;
+    }
+    let pv = ds.feed[i] * h;
+    // refill winch battery first (not while it is in use)
+    if (wSoc < wCap && pv > 0 && !winchBusy) {
+      const w = Math.min(pv, wCap - wSoc);
+      wSoc += w; pv -= w; dayWinchPV[d] += w;
+      if (winchSeries) winchSeries[i] = w / h;
+    }
+    // charge battery from remaining surplus
+    const surplus = Math.min(pv, pLim);
     if (surplus > 0 && soc < C) {
       const inCell = Math.min(surplus * etaC, C - soc);
       soc += inCell;
@@ -229,10 +280,13 @@ export function simulate(ds, capKWh, p, withSeries = false) {
     if (soc <= 1e-6) dayEmpty[d] = 1;
     if (series) series[i] = C > 0 ? (soc / C) * 100 : 0;
   }
-  let dis = 0, avoid = 0, charge = 0;
+  let dis = 0, avoid = 0, charge = 0, winchPV = 0, winchGrid = 0;
   for (let d = 0; d < nd; d++) {
     dis += dayDis[d]; avoid += dayAvoid[d]; charge += dayCharge[d];
-    if (!(ex && ex.has(d))) { full += dayFull[d]; empty += dayEmpty[d]; }
+    if (!(ex && ex.has(d))) {
+      full += dayFull[d]; empty += dayEmpty[d];
+      winchPV += dayWinchPV[d]; winchGrid += dayWinchGrid[d];
+    }
   }
   return {
     cap: capKWh,
@@ -243,6 +297,12 @@ export function simulate(ds, capKWh, p, withSeries = false) {
     dayCharge: Array.from(dayCharge, (v) => v / 1000),
     daysFull: full, daysEmpty: empty,
     soc: series,
+    winchPV: winchPV / 1000, winchGrid: winchGrid / 1000, winchMin: wMin / 1000,
+    dayWinchPV: Array.from(dayWinchPV, (v) => v / 1000),
+    dayWinchGrid: Array.from(dayWinchGrid, (v) => v / 1000),
+    winchTopUps: Array.from(dayWinchGrid).filter((v, d) => v > 0 && !(ex && ex.has(d))).length,
+    winchDays: Array.from(wNeed).filter((v, d) => v > 0 && !(ex && ex.has(d))).length,
+    winch: winchSeries,
   };
 }
 
@@ -286,8 +346,11 @@ export function annualFigures(ds, res, s) {
   const ch = annualise(res.dayCharge, act, s.method, s.N);
   const gridDay = Array.from(ds.daily.grid);
   const gr = annualise(gridDay, act, s.method, s.N);
+  const wpv = annualise(res.dayWinchPV, act, s.method, s.N);
+  const wgr = annualise(res.dayWinchGrid, act, s.method, s.N);
   const mk = (k) => ({
     cycles: cyc[k], avoided: av[k], charged: ch[k], grid: gr[k],
+    winchPV: wpv[k], winchGrid: wgr[k],
     coverage: gr[k] > 0 ? av[k] / gr[k] : 0,
     lifetime: lifetime(cyc[k], s.cycleLife, s.calLife),
   });

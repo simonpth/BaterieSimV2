@@ -28,6 +28,7 @@ Diagramme (uPlot):
 - Schrittweise Simulation je 10-Minuten-Wert. Es fließen nur **Einspeisung (= Überschuss)** und **Netzbezug (= Defizit)** ein.
   - Laden: `min(Einspeisung · η_lade, C − SoC)`
   - Entladen: `min(Netzbezug / η_entlade, SoC)`
+- Optional **Elektrowinde** mit eigenem Akku (Standard 120 kWh, zu Beginn voll). An jedem Samstag und Sonntag im gewählten Monatsbereich (Standard März–Oktober) läuft die Winde von 9 bis 19 Uhr (einstellbar). In dieser Zeit kann sie nicht geladen werden, und um 19 Uhr hat ihr Akku 30 kWh (einstellbar) weniger als um 9 Uhr. Sonst wird der Windenakku nur aus PV-Überschuss geladen, immer vor dem Hausspeicher. Ist er am Freitag vor einem Windenwochenende nicht voll, wird er aus dem Netz vollgeladen (nicht aus dem Hausspeicher).
 - Vollzyklen = entnommene Energie (Zellseite) ÷ nutzbare Kapazität.
 - Hochrechnung auf 365 Tage. Fehlende Tage werden mit dem Tagesmittel der letzten N Messtage aufgefüllt, alternativ mit erstem und letztem Block. Die Variante „Nur Messzeitraum“ zählt fehlende Tage als 0 und ist damit die konservative Untergrenze.
 - Lebensdauer = `min(Zyklenfestigkeit ÷ Zyklen pro Jahr, Kalenderlebensdauer)`.

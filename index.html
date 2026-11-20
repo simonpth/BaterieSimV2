@@ -86,6 +86,64 @@
       </details>
 
       <details open>
+        <summary>Elektrowinde</summary>
+        <label class="field check">
+          <input type="checkbox" data-key="winch">
+          <span>Elektrowinde berücksichtigen <i class="q" data-tip="Die Elektrowinde hat einen eigenen Akku. An jedem Samstag und Sonntag im gewählten Zeitraum verbraucht sie die eingestellte Energiemenge daraus. Der Windenakku wird nur aus PV-Überschuss geladen, immer vor dem Hausspeicher. Ist er am Freitag vor einem Windenwochenende nicht voll, wird er aus dem Netz vollgeladen (nicht aus dem Hausspeicher). An Windentagen ist die Winde im eingestellten Zeitfenster im Einsatz und kann dann nicht geladen werden.">?</i></span>
+        </label>
+        <label class="field">
+          <span>Akku der Winde [kWh] <i class="q" data-tip="Nutzbare Kapazität des Windenakkus. Zu Beginn des Messzeitraums gilt er als voll.">?</i></span>
+          <input type="number" data-key="winchCap" min="1" max="2000" step="1">
+        </label>
+        <label class="field">
+          <span>Verbrauch je Windentag [kWh] <i class="q" data-tip="Energie, die die Winde an einem Samstag bzw. Sonntag während des Einsatzes aus ihrem Akku verbraucht. Gilt für beide Tage getrennt.">?</i></span>
+          <input type="number" data-key="winchKWh" min="0" max="1000" step="1">
+        </label>
+        <label class="field">
+          <span>Einsatz von [Uhr] <i class="q" data-tip="Beginn des Windenbetriebs an Windentagen. Ab dann kann die Winde nicht geladen werden.">?</i></span>
+          <input type="number" data-key="winchStart" min="0" max="23" step="1">
+        </label>
+        <label class="field">
+          <span>Einsatz bis [Uhr] <i class="q" data-tip="Ende des Windenbetriebs an Windentagen. Bis dahin hat der Windenakku den Verbrauch je Windentag abgegeben, danach kann er wieder geladen werden. Im Zeitfenster geht der PV-Überschuss direkt in den Hausspeicher.">?</i></span>
+          <input type="number" data-key="winchEnd" min="1" max="24" step="1">
+        </label>
+        <label class="field">
+          <span>Von Monat <i class="q" data-tip="Erster Monat, in dem die Winde am Wochenende läuft.">?</i></span>
+          <select data-key="winchFrom" data-num>
+            <option value="1">Januar</option>
+            <option value="2">Februar</option>
+            <option value="3">März</option>
+            <option value="4">April</option>
+            <option value="5">Mai</option>
+            <option value="6">Juni</option>
+            <option value="7">Juli</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">Oktober</option>
+            <option value="11">November</option>
+            <option value="12">Dezember</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Bis Monat <i class="q" data-tip="Letzter Monat (einschließlich), in dem die Winde am Wochenende läuft.">?</i></span>
+          <select data-key="winchTo" data-num>
+            <option value="1">Januar</option>
+            <option value="2">Februar</option>
+            <option value="3">März</option>
+            <option value="4">April</option>
+            <option value="5">Mai</option>
+            <option value="6">Juni</option>
+            <option value="7">Juli</option>
+            <option value="8">August</option>
+            <option value="9">September</option>
+            <option value="10">Oktober</option>
+            <option value="11">November</option>
+            <option value="12">Dezember</option>
+          </select>
+        </label>
+      </details>
+
+      <details open>
         <summary>Kosten</summary>
         <label class="field">
           <span>Strompreis [ct/kWh] <i class="q" data-tip="Arbeitspreis für Netzbezug. Jede vermiedene kWh Netzbezug spart diesen Betrag.">?</i></span>
